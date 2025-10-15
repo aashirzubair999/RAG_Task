@@ -2,12 +2,12 @@ from flask import Blueprint, request, jsonify
 from langchain_openai import OpenAIEmbeddings   #type: ignore
 from langchain.document_loaders import PyPDFLoader #type: ignore
 from langchain.text_splitter import RecursiveCharacterTextSplitter  #type: ignore
-from langchain.vectorstores import Chroma #: ignore
+from langchain.vectorstores import Chroma #type: ignore
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
-openai_api_key = os.getenv("OPEN_API_KEY")
+Openai_Api_key = os.getenv("OPEN_API_KEY")
 
 embedding_bp = Blueprint('embedding', __name__)
 
@@ -27,7 +27,7 @@ def create_embedding():
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     split_docs = text_splitter.split_documents(docs)
 
-    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+    embeddings = OpenAIEmbeddings(openai_api_key=Openai_Api_key)
     vectordb = Chroma.from_documents(split_docs, embeddings, persist_directory="vectorstores/my_vector_db")
 
     vectordb.persist()

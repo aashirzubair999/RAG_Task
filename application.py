@@ -12,11 +12,12 @@ CORS(application)
 
 from routes.home_route import home_bp
 from routes.create_embedding import embedding_bp
-
+from routes.query_route import query_bp
 
 
 application.register_blueprint(home_bp)
 application.register_blueprint(embedding_bp)
+application.register_blueprint(query_bp)
 
 if __name__ == "__main__":
     application.run(debug=True)
