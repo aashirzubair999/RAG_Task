@@ -1,0 +1,37 @@
+# --- Environment & API Keys ---
+.env
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Virtual Environment ---
+ragtask/
+
+# --- IDE & Editor Files ---
+.vscode/
+.idea/
+
+# --- OS Files ---
+.DS_Store
+Thumbs.db
+
+# --- Vector Databases & Generated Data ---
+vectorstores/
+*.db
+*.sqlite
+*.faiss
+*.pkl
+
+# --- Uploaded or Generated PDFs ---
+pdfs/
+
+# --- Logs ---
+*.log
+
+# --- Cache ---
+.cache/
+*.tmp
+
