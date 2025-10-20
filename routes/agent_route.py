@@ -45,21 +45,19 @@ def retrieval_qa_tool(query: str, db_path: str = "vectorstores/my_vector_db"):
         
         retriever = vectordb.as_retriever(search_kwargs={"k": 3})
         llm = ChatOpenAI(model="gpt-4o-mini", openai_api_key=Open_Api_Key, temperature=0)
-    
-        
         prompt_template = """You are a document Q&A assistant. Use ONLY the following context to answer the question.
 
-STRICT RULES:
-- If the answer is NOT in the context below, you MUST respond with: "I cannot find information about this in the uploaded documents."
-- DO NOT use your general knowledge
-- DO NOT make up answers
-- ONLY use information from the context provided
+                STRICT RULES:
+                - If the answer is NOT in the context below, you MUST respond with: "I cannot find information about this in the uploaded documents."
+                - DO NOT use your general knowledge
+                - DO NOT make up answers
+                - ONLY use information from the context provided
 
-Context: {context}
+                Context: {context}
 
-Question: {question}
+                Question: {question}
 
-Answer:"""
+                Answer:"""
         
         PROMPT = PromptTemplate(
             template=prompt_template, input_variables=["context", "question"]
@@ -86,6 +84,7 @@ retrieval_tool = Tool(
         "Input: the user's question."
     )
 )
+
 
 
 # 3. AGENT SETUP with Custom Prompt
@@ -140,6 +139,7 @@ agent = initialize_agent(
     }
 )
 
+print(agent.agent.llm_chain.prompt.template)
 print("Agent initialized successfully!")
 
 
