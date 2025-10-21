@@ -1,10 +1,8 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify
 from langchain.agents import Tool, initialize_agent, AgentType  # type: ignore
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings  # type: ignore
-from langchain.chains import RetrievalQA  # type: ignore
-from langchain.vectorstores import Chroma  # type: ignore
-from langchain.prompts import PromptTemplate  # type: ignore
+from langchain_openai import ChatOpenAI  # type: ignore
 from langchain.memory import ConversationBufferMemory  # type: ignore
+from langchain.prompts import PromptTemplate  # type: ignore
 import os
 from dotenv import load_dotenv
 from datetime import datetime, date
@@ -12,31 +10,15 @@ import re
 
 load_dotenv()
 
-# Store memory separately for each user
-user_memories = {}
-
-def get_user_memory(user_id):
-    """Return existing memory for a user or create a new one"""
-    if user_id not in user_memories:
-        user_memories[user_id] = ConversationBufferMemory(
-            memory_key="chat_history", # this is like giving the name to where the messages are stored
-            return_messages=True, # when we retrieve memory, we want full messages (with roles) not just text
-            output_key="output" # when AI gives answer store that answer under a key name "output"
-        )
-    return user_memories[user_id]
-
-
-
 class WeatherAgent:
     def __init__(self, api_key=None):
         """Initialize the WeatherAgent with OpenAI API key"""
         self.api_key = api_key or os.getenv("OPEN_API_KEY")
         self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=self.api_key)
         self.tools = self._initialize_tools()
-        self.agent = None  # Will be created with user-specific memory
     
-    def age_calculator(self, dob_input):
-        """Calculate age from date of birth input"""
+    def age_calculator(self, dob_input, add_years=0):
+        """Calculate age from date of birth input, optionally add years"""
         if isinstance(dob_input, str):
             dob_input = dob_input.strip()
             match = re.findall(r'\d+', dob_input)
@@ -93,26 +75,28 @@ class WeatherAgent:
             if age < 0:
                 return "Invalid date: The birth date is in the future."
             
-            return f"The age is {age} years."
+            final_age = age + add_years
+            return f"The age is {final_age} years."
         except ValueError as e:
             return f"Invalid date combination. {str(e)}. Please check that the day is valid for the given month and year."
     
     def _initialize_tools(self):
         age_tool = Tool(
-            name="Age Calculator",  
-            func=self.age_calculator,
+            name="Age Calculator",
+            func=lambda x: self.age_calculator(*eval(x) if x.startswith('(') else x),
             description=(
-                "Use this tool ONLY when the user provides a COMPLETE date of birth with day, month, AND year. "
-                "Valid formats: '15-08-2000', '15/08/2000', '(15, 8, 2000)', '15 August 2000'. "
-                "DO NOT use this tool if only year is provided (e.g., '2002') or if day/month is missing. "
-                "If the date is incomplete, ask the user for the missing information. "
-                "The input must include all three: day, month, year."
+                "Use this tool when the user provides a COMPLETE date of birth with day, month, AND year, "
+                "and optionally additional years to add. "
+                "Valid formats: '15-08-2000', '15/08/2000', '(15, 8, 2000)', '15 August 2000', "
+                "or '(15, 8, 2000, 5)' to add 5 years. "
+                "DO NOT use this tool if only year is provided or if day/month is missing. "
+                "The input must include all three: day, month, year, and optionally add_years."
             )
         )
         return [age_tool]
     
     def _create_agent_with_memory(self, memory):
-        """Create agent instance with specific user memory"""
+        """Create agent instance with specific memory"""
         PREFIX = """You are OsAMA, an intelligent assistant that helps users with their queries.
 
 CRITICAL RULES FOR OUTPUT FORMAT:
@@ -122,9 +106,7 @@ CRITICAL RULES FOR OUTPUT FORMAT:
 
 YOUR CAPABILITIES:
 - You can answer questions using your available tools OR respond to social/conversational messages
-- You have TWO tools:
-  1. Age Calculator - for calculating age from birth dates (REQUIRES complete date: day, month, year)
-  2. Document QA - for searching UPLOADED DOCUMENTS only
+- You have ONE tool: Age Calculator - for calculating age from birth dates (REQUIRES complete date: day, month, year, optional add_years)
   
 AGE CALCULATOR RULES:
 - You MUST have all three components (day, month, year) before using the tool
@@ -132,6 +114,7 @@ AGE CALCULATOR RULES:
 - If user only provides month and year, ask for day
 - If user only provides day and month, ask for year
 - If user provides month in number form like 01, 02, 3, 4, accept and process it
+- Optionally, user can provide additional years to add (e.g., "add 5 to my age")
 - DO NOT attempt to calculate age with incomplete information
   
 SOCIAL INTERACTIONS (respond directly but ALWAYS use "Final Answer:" format):
@@ -146,15 +129,13 @@ SOCIAL INTERACTIONS (respond directly but ALWAYS use "Final Answer:" format):
 - Questions about previous conversation → Use your chat history to answer
 
 MEMORY AND CONTEXT:
-- You have access to the full chat history with this user
-- When users ask "what did I ask before" or "what did the last 5 questions did i ask form you" or similar, review the chat_history and provide accurate information
+- You have access to the full chat history provided in the request
+- When users ask "what did I ask before" or "what did the last 5 questions did I ask from you" or similar, review the chat_history and provide accurate information
 - Reference previous conversations naturally when relevant
 
 LIMITATIONS:
 - Do not answer general knowledge questions (e.g., "when was Pakistan created")
-- The Document QA tool can ONLY answer questions about content in uploaded documents
-- If Document QA returns "I cannot find information", tell the user this information is not in the documents
-- For topics NOT related to age calculation or uploaded documents, politely inform the user about your capabilities
+- For topics NOT related to age calculation, politely inform the user about your capabilities
 
 You have access to the following tools:"""
 
@@ -188,11 +169,11 @@ Thought:{agent_scratchpad}"""
         agent = initialize_agent(
             self.tools,
             self.llm,
-            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION ,  # Changed from ZERO_SHOT to CONVERSATIONAL
-            verbose=True, # Show all the thinking steps of the agent in the console like action, thought etc
-            memory=memory, 
+            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+            verbose=True,
+            memory=memory,
             handle_parsing_errors=True,
-            max_iterations=5,  
+            max_iterations=5,
             max_execution_time=30,
             early_stopping_method="generate",
             agent_kwargs={
@@ -203,47 +184,48 @@ Thought:{agent_scratchpad}"""
         )
         return agent
     
-    def process_message(self, user_message, user_memory):
-        """Process user message with specific user memory"""
+    def process_message(self, user_message, chat_history=None):
+        """Process user message with provided chat history"""
         try:
-            # Create or update agent with user's memory
-            agent = self._create_agent_with_memory(user_memory)
+            # Initialize memory with provided chat history
+            memory = ConversationBufferMemory(
+                memory_key="chat_history",
+                return_messages=True,
+                output_key="output"
+            )
+            
+            # Load provided chat history into memory
+            if chat_history:
+                for entry in chat_history:
+                    if entry.get("user"):
+                        memory.chat_memory.add_user_message(entry["user"])
+                    if entry.get("AI"):
+                        memory.chat_memory.add_ai_message(entry["AI"])
+            
+            # Create agent with memory
+            agent = self._create_agent_with_memory(memory)
             response = agent.invoke({"input": user_message})
-            return {"response": response["output"]}, 200
+            
+            # Update chat history with new message and response
+            new_history = chat_history.copy() if chat_history else []
+            new_history.append({"user": user_message, "AI": response["output"]})
+            
+            return {"response": response["output"], "chat_history": new_history}, 200
         except Exception as e:
             print(f"Error: {str(e)}")
-            return {"error": str(e)}, 500
-
+            return {"error": str(e), "chat_history": chat_history}, 500
 
 weather_bp = Blueprint('weather', __name__)
 weather_agent = WeatherAgent()
-
 
 @weather_bp.route("/weather", methods=["POST"])
 def weather_route():
     data = request.get_json()
     user_message = data.get("message")
-    user_id = data.get("user_id")
+    chat_history = data.get("chat_history", [])
 
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
-    if not user_id:
-        return jsonify({"error": "user_id is required for tracking session"}), 400
 
-    # Get or create memory for this user
-    user_memory = get_user_memory(user_id)
-
-    result, status_code = weather_agent.process_message(user_message, user_memory)
+    result, status_code = weather_agent.process_message(user_message, chat_history)
     return jsonify(result), status_code
-
-
-@weather_bp.route("/weather/clear", methods=["POST"])
-def clear_memory_route():
-    data = request.get_json()
-    user_id = data.get("user_id")
-
-    if not user_id or user_id not in user_memories:
-        return jsonify({"error": "Invalid or missing user_id"}), 400
-
-    user_memories[user_id].clear()
-    return jsonify({"message": f"Memory cleared for user {user_id}"}), 200
