@@ -12,18 +12,19 @@ import re
 
 load_dotenv()
 
-# 🔹 Store memory separately for each user
+# Store memory separately for each user
 user_memories = {}
 
 def get_user_memory(user_id):
     """Return existing memory for a user or create a new one"""
     if user_id not in user_memories:
         user_memories[user_id] = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            output_key="output"
+            memory_key="chat_history", # this is like giving the name to where the messages are stored
+            return_messages=True, # when we retrieve memory, we want full messages (with roles) not just text
+            output_key="output" # when AI gives answer store that answer under a key name "output"
         )
     return user_memories[user_id]
+
 
 
 class WeatherAgent:
@@ -114,51 +115,71 @@ class WeatherAgent:
         """Create agent instance with specific user memory"""
         PREFIX = """You are OsAMA, an intelligent assistant that helps users with their queries.
 
-CRITICAL RULES:
-- You can answer questions using your available tools OR respond to social/conversational messages directly
+CRITICAL RULES FOR OUTPUT FORMAT:
+- You MUST ALWAYS end your response with "Final Answer: [your response]"
+- Even for simple greetings or conversations, use the format: "Final Answer: [your greeting/response]"
+- This is REQUIRED for the system to work properly
+
+YOUR CAPABILITIES:
+- You can answer questions using your available tools OR respond to social/conversational messages
 - You have TWO tools:
   1. Age Calculator - for calculating age from birth dates (REQUIRES complete date: day, month, year)
   2. Document QA - for searching UPLOADED DOCUMENTS only
   
-- For Age Calculator: You MUST have all three components (day, month, year) before using the tool
-  * If user only provides year (e.g., "2002"), ask for day and month
-  * If user only provides month and year, ask for day
-  * If user only provides day and month, ask for year
-  * if the user provide month in number form like 01 02 3 4 answer them as well
-  * DO NOT attempt to calculate age with incomplete information
+AGE CALCULATOR RULES:
+- You MUST have all three components (day, month, year) before using the tool
+- If user only provides year (e.g., "2002"), ask for day and month
+- If user only provides month and year, ask for day
+- If user only provides day and month, ask for year
+- If user provides month in number form like 01, 02, 3, 4, accept and process it
+- DO NOT attempt to calculate age with incomplete information
   
-- For Social Interactions (respond directly WITHOUT using tools):
-  * Greetings (hello, hi, hey) → Respond warmly and introduce yourself
-  * "How are you?" → Respond positively and offer help
-  * "What's up?" → Respond casually and ask how you can help
-  * "Thank you" → Acknowledge gratefully
-  * "Good morning/afternoon/evening" → Greet back warmly
-  * "Goodbye/Bye" → Say farewell politely
-  * "Who are you?" → Introduce yourself as OsAMA, an intelligent assistant
-  * Any friendly conversational messages → Respond warmly and naturally
+SOCIAL INTERACTIONS (respond directly but ALWAYS use "Final Answer:" format):
+- Greetings (hello, hi, hey) → Respond warmly and introduce yourself
+- "How are you?" → Respond positively and offer help
+- "What's up?" → Respond casually and ask how you can help
+- "Thank you" → Acknowledge gratefully
+- "Good morning/afternoon/evening" → Greet back warmly
+- "Goodbye/Bye" → Say farewell politely
+- "Who are you?" → Introduce yourself as OsAMA, an intelligent assistant
+- Any friendly conversational messages → Respond warmly and naturally
+- Questions about previous conversation → Use your chat history to answer
 
-- Do not answer general questions like when pajsitan was created like these type of questions       
+MEMORY AND CONTEXT:
+- You have access to the full chat history with this user
+- When users ask "what did I ask before" or "what did the last 5 questions did i ask form you" or similar, review the chat_history and provide accurate information
+- Reference previous conversations naturally when relevant
 
+LIMITATIONS:
+- Do not answer general knowledge questions (e.g., "when was Pakistan created")
 - The Document QA tool can ONLY answer questions about content in uploaded documents
-- If Document QA returns "I cannot find information about this in the uploaded documents", you MUST tell the user that this information is not available in the documents
+- If Document QA returns "I cannot find information", tell the user this information is not in the documents
 - For topics NOT related to age calculation or uploaded documents, politely inform the user about your capabilities
 
 You have access to the following tools:"""
 
-        FORMAT_INSTRUCTIONS = """Use the following format:
+        FORMAT_INSTRUCTIONS = """IMPORTANT: You must use this exact format for ALL responses:
 
 Question: the input question you must answer
 Thought: you should always think about what to do
+
+For conversational/social messages (greetings, thanks, etc.):
+Thought: This is a social interaction, I should respond directly
+Final Answer: [your warm, friendly response]
+
+For questions requiring tools:
+Thought: I need to use a tool to answer this
 Action: the action to take, should be one of [{tool_names}]
 Action Input: the input to the action
 Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
-Final Answer: the final answer to the original input question"""
+Final Answer: the final answer to the original input question
+
+CRITICAL: Every response MUST end with "Final Answer:" followed by your response."""
 
         SUFFIX = """Begin!
 
-Chat History:
+Chat History (review this for context about previous conversations):
 {chat_history}
 
 Question: {input}
@@ -167,11 +188,11 @@ Thought:{agent_scratchpad}"""
         agent = initialize_agent(
             self.tools,
             self.llm,
-            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-            verbose=True,
-            memory=memory,
+            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION ,  # Changed from ZERO_SHOT to CONVERSATIONAL
+            verbose=True, # Show all the thinking steps of the agent in the console like action, thought etc
+            memory=memory, 
             handle_parsing_errors=True,
-            max_iterations=3,
+            max_iterations=5,  
             max_execution_time=30,
             early_stopping_method="generate",
             agent_kwargs={
