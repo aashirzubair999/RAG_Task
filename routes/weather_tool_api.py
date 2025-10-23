@@ -10,7 +10,7 @@ from langchain.docstore.document import Document #type: ignore
 from pydantic import BaseModel, Field
 import os
 from dotenv import load_dotenv
-from datetime import datetime, date
+from datetime import date
 import re
 import requests
 import json
@@ -169,10 +169,11 @@ class WeatherTool(BaseTool):
         """Execute the weather tool"""
         try:
             # Check if query is a JSON string
-            if query.strip().startswith('{'):
+            if query.strip():
                 try:
                     # Parse JSON input
                     data = json.loads(query.replace("'", '"'))  # Replace single quotes with double quotes
+                    print("Parsed JSON Data:", data)
                     location = data.get('Location', 'NAN')
                     days = int(data.get('Days', 1))
                     
@@ -230,7 +231,7 @@ class AgeCalculatorInput(BaseModel):
 class AgeCalculatorTool(BaseTool):
     name: str = "Age Calculator"
     args_schema: type[BaseModel] = AgeCalculatorInput
-    return_direct: bool = False
+    return_direct: bool = False # Do not send the tool’s answer directly to the user.
     description: str = (
         "**MANDATORY TOOL** -Use this tool when the user wants to calculate his age. The input to the tool should always be a JSON object send as"
         "This includes incomplete inputs like 'July 1999', '2002', 'born in August', etc. "
@@ -428,10 +429,9 @@ CRITICAL RULES FOR OUTPUT FORMAT:
 
 YOUR CAPABILITIES:
 - You can answer questions using your available tools OR respond to social/conversational messages
-- You have THREE tools:
+- You have TWO tools:
   1. Age Calculator - **MANDATORY** for ANY age/date of birth query
   2. Weather Forecast - for getting weather information for any location
-  3. Document QA - for searching UPLOADED DOCUMENTS only
 
 *** CRITICAL AGE CALCULATOR RULES ***
 - **YOU MUST CALL THE AGE CALCULATOR TOOL FOR ANY AGE-RELATED QUERY**
