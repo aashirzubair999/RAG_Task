@@ -38,10 +38,18 @@ class WeatherTool(BaseTool):
     args_schema: type[BaseModel] = WeatherToolInput
     return_direct: bool = False
     description: str = (
-        "Use this tool when the user asks about weather, weather forecast, or climate conditions for a location. "
+        "Mandatory tool-Use this tool when the user asks about weather, weather forecast, or climate conditions for a specific location. "
+        "This can include incomplete strings like 'weather in London', 'forecast for Paris', 'tell me weather in Tokyo for 3 days'."
+        "DO NOT answer age questions yourself - ALWAYS call this tool first. "
+        "The tool will detect missing information and provide appropriate responses. "
+        "a stringify object which will have 2 keys named as Days, Location "
+        "Days and Location is provided by user. Is user missed or skip anything make sure to give the value to location key as NAN and days to 1 "
         "The tool accepts queries like: 'weather in London for 5 days', 'what's the weather in Paris', "
         "'forecast for New York'. It will automatically extract the city name and number of days. "
         "If days are not mentioned, it provides today's weather."
+        "assume Location value if not provided make sure to give the value NAN to that particular key(Location). For example the JSON should be like"
+        "('day':'day given by user or 1 if not given', 'Location':'location given by user or NAN if not given') "
+        " Make sure to use the curly braces for JSON not the square braces i gave in example its just for your understanding"
     )
     
     def _extract_location_and_days(self, query: str) -> tuple:
@@ -160,8 +168,24 @@ class WeatherTool(BaseTool):
     def _run(self, query: str) -> str:
         """Execute the weather tool"""
         try:
-            # Extract location and days from query
-            location, days = self._extract_location_and_days(query)
+            # Check if query is a JSON string
+            if query.strip().startswith('{'):
+                try:
+                    # Parse JSON input
+                    data = json.loads(query.replace("'", '"'))  # Replace single quotes with double quotes
+                    location = data.get('Location', 'NAN')
+                    days = int(data.get('Days', 1))
+                    
+                    # Handle NAN location
+                    if location == 'NAN' or not location:
+                        return "I need to know the location to fetch weather data. Please specify a city name."
+                    
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, fall back to text extraction
+                    location, days = self._extract_location_and_days(query)
+            else:
+                # Extract location and days from plain text query
+                location, days = self._extract_location_and_days(query)
             
             # Fetch weather data
             weather_data = self._fetch_weather_data(location, days)
@@ -182,12 +206,13 @@ class WeatherTool(BaseTool):
             )
             
             # Query the vector store
-            response = qa_chain.invoke({"query": query})
+            response = qa_chain.invoke({"query": f"What is the weather in {location} for {days} days?"})
             
             return response["result"]
         
         except Exception as e:
             return f"Error processing weather request: {str(e)}"
+
 
 
 
